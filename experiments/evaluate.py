@@ -125,12 +125,12 @@ def detection_metrics(episodes: list[Episode], threshold: float) -> dict:
 
 
 def print_table(results: dict[str, dict]) -> None:
-    header = f"{'policy':<22}{'return':>16}{'sharpe':>8}{'adverse':>9}{'trades':>8}"
+    header = f"{'policy':<26}{'return':>16}{'sharpe':>8}{'adverse':>9}{'trades':>8}"
     print(header)
     print("-" * len(header))
     for name, m in results.items():
         ret = f"{m['mean_return']:+.2f} ± {m['stderr_return']:.2f}"
-        print(f"{name:<22}{ret:>16}{m['sharpe']:>8.2f}"
+        print(f"{name:<26}{ret:>16}{m['sharpe']:>8.2f}"
               f"{m['adverse_selection_loss']:>9.2f}{m['trades_per_market']:>8.1f}")
 
 
@@ -142,27 +142,33 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("results"))
     parser.add_argument("--params", choices=["toy", "calibrated"], default="toy",
                         help="toy defaults, or the fit to Polymarket data in market/calibrated.json")
+    parser.add_argument("--particles", type=int, default=2000,
+                        help="particles for the particle-filter QMDP (0 to skip it)")
     args = parser.parse_args()
 
     params = MarketParams() if args.params == "toy" else calibrated_params()
     aware = QMDPSolver(params, model_insiders=True)
     blind = QMDPSolver(params, model_insiders=False)
     policies = [
-        BuyAndHold(),
+        BuyAndHold(params),
         QMDPPolicy(params, blind, model_insiders=False),
         QMDPPolicy(params, aware),
+        *([QMDPPolicy(params, aware, particles=args.particles, seed=args.seed)]
+          if args.particles else []),
         Oracle(aware),
     ]
 
     seeds = range(args.seed * args.markets, (args.seed + 1) * args.markets)
     episodes = {p.name: [run_episode(p, params, s) for s in seeds] for p in policies}
     trading = {name: trading_metrics(eps) for name, eps in episodes.items()}
-    detection = detection_metrics(episodes["QMDP"], args.threshold)
+    filters = [name for name in ("QMDP", "QMDP (particle filter)") if name in episodes]
+    detection = {name: detection_metrics(episodes[name], args.threshold) for name in filters}
 
     print_table(trading)
     print()
-    for key, value in detection.items():
-        print(f"{key:<30}{value:.3f}")
+    print(f"{'detection':<30}" + "".join(f"{name:>24}" for name in filters))
+    for key in detection["QMDP"]:
+        print(f"{key:<30}" + "".join(f"{detection[name][key]:>24.3f}" for name in filters))
 
     args.out.mkdir(parents=True, exist_ok=True)
     report = {"params": asdict(params), "markets": args.markets,

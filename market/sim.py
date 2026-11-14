@@ -30,6 +30,17 @@ Accounting: buying a NO contract at YES price p costs 1 - p and pays
 We therefore track one signed position (negative means NO). Trading dq
 contracts at price p pays -dq * p, and the position settles for
 position * outcome.
+
+Budget: the agent starts with `budget` in cash and must stay solvent, able to
+pay out whichever way the market resolves: cash >= 0 (YES loses) and
+cash + position >= 0 (YES wins). For a long YES position this is "cost <=
+cash"; for NO it is "position * (1 - p) <= cash". Orders that would break it
+are shrunk until they fit. Planners that ignore cash (QMDP) still see the
+position limit; with the default budget equal to max_position, the budget only
+binds after losses.
+
+Policies return an `Action` (fixed lots) or an `Order` for an exact number of
+contracts.
 """
 from __future__ import annotations
 
@@ -56,6 +67,7 @@ class MarketParams:
     small_lot: int = 1
     large_lot: int = 3
     max_position: int = 6
+    budget: float = 6.0          # starting cash; each contract pays 1
     initial_price_range: tuple[float, float] = (0.2, 0.8)
 
 
@@ -69,6 +81,13 @@ class Action(IntEnum):
 
 
 @dataclass(frozen=True)
+class Order:
+    """Trade exactly `quantity` contracts: positive buys YES, negative buys NO."""
+
+    quantity: int
+
+
+@dataclass(frozen=True)
 class MarketState:
     t: int
     log_odds: float
@@ -76,6 +95,7 @@ class MarketState:
     outcome: int
     onset: int | None  # step at which the insider became active
     flow_types: tuple[int, ...] = ()  # true TraderType of each trade in the last Observation
+    cash: float = 0.0
 
     @property
     def price(self) -> float:
@@ -95,6 +115,7 @@ class Observation:
     executed: int    # signed contracts we traded on the last step
     done: bool
     trades: tuple[LargeTrade, ...] = ()  # other participants' large trades this step
+    cash: float = 0.0    # our cash after this step's trade (and settlement, when done)
 
 
 def sigmoid(x):
@@ -109,9 +130,10 @@ def outcome_sign(outcome: int) -> int:
     return 1 if outcome == 1 else -1
 
 
-def executed_quantity(position: int, action: Action, params: MarketParams) -> int:
-    """Signed contracts traded by `action`, after the position limit."""
-    requested = {
+def requested_quantity(position: int, action: Action | Order, params: MarketParams) -> int:
+    if isinstance(action, Order):
+        return int(action.quantity)
+    return {
         Action.HOLD: 0,
         Action.BUY_YES_SMALL: params.small_lot,
         Action.BUY_YES_LARGE: params.large_lot,
@@ -119,8 +141,26 @@ def executed_quantity(position: int, action: Action, params: MarketParams) -> in
         Action.BUY_NO_LARGE: -params.large_lot,
         Action.EXIT: -position,
     }[Action(action)]
+
+
+def solvent(cash: float, position: int, quantity: int, log_odds: float,
+            params: MarketParams) -> bool:
+    """Whether trading `quantity` leaves us able to pay out either way."""
+    after = cash + float(trade_cash(quantity, fill_price(log_odds, quantity, params), params))
+    return after >= -1e-9 and after + position + quantity >= -1e-9
+
+
+def executed_quantity(position: int, action: Action | Order, params: MarketParams,
+                      cash: float | None = None, log_odds: float | None = None) -> int:
+    """Signed contracts traded by `action`, after the position limit and, when
+    `cash` is given, shrunk until the trade is solvent."""
     limit = params.max_position
-    return int(np.clip(position + requested, -limit, limit)) - position
+    requested = requested_quantity(position, action, params)
+    quantity = int(np.clip(position + requested, -limit, limit)) - position
+    if cash is not None:
+        while quantity != 0 and not solvent(cash, position, quantity, log_odds, params):
+            quantity -= int(np.sign(quantity))
+    return quantity
 
 
 def fill_price(log_odds, quantity: int, params: MarketParams):
@@ -136,14 +176,15 @@ def reset(params: MarketParams, rng: np.random.Generator) -> tuple[MarketState, 
     price = rng.uniform(*params.initial_price_range)
     outcome = int(rng.random() < price)
     state = MarketState(t=0, log_odds=float(logit(price)), position=0,
-                        outcome=outcome, onset=None)
-    obs = Observation(t=0, price=price, news=0.0, score=0.0, executed=0, done=False)
+                        outcome=outcome, onset=None, cash=params.budget)
+    obs = Observation(t=0, price=price, news=0.0, score=0.0, executed=0, done=False,
+                      cash=params.budget)
     return state, obs
 
 
-def step(state: MarketState, action: Action, rng: np.random.Generator,
+def step(state: MarketState, action: Action | Order, rng: np.random.Generator,
          params: MarketParams) -> tuple[MarketState, Observation, float]:
-    quantity = executed_quantity(state.position, action, params)
+    quantity = executed_quantity(state.position, action, params, state.cash, state.log_odds)
     reward = float(trade_cash(quantity, fill_price(state.log_odds, quantity, params), params))
     position = state.position + quantity
 
@@ -167,8 +208,9 @@ def step(state: MarketState, action: Action, rng: np.random.Generator,
     if done:
         reward += position * state.outcome
 
+    cash = state.cash + reward
     next_state = replace(state, t=t, log_odds=log_odds, position=position, onset=onset,
-                         flow_types=types)
+                         flow_types=types, cash=cash)
     obs = Observation(t=t, price=float(sigmoid(log_odds)), news=news, score=score,
-                      executed=quantity, done=done, trades=trades)
+                      executed=quantity, done=done, trades=trades, cash=cash)
     return next_state, obs, reward

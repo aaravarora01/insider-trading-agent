@@ -8,7 +8,8 @@ The trader's problem is a POMDP. The hidden state is the outcome and whether
 an insider is trading; the agent observes the price, public news, other
 participants' large trades with the wallet features behind them, and its own
 fills. Actions are buy YES, buy NO (small or
-large lot), hold, or exit.
+large lot), hold, or exit, or an `Order` for an exact number of contracts. The
+agent starts with a cash budget and its orders are shrunk to stay solvent.
 
 ## Layout
 
@@ -18,9 +19,10 @@ market/sim.py          shared interface (MarketParams, MarketState, Observation,
 market/calibration.py  MarketParams fitted to Polymarket data (from market/calibrated.json)
 market/flow.py         large trades from retail, insider, and copy-bot wallets; wallet
                        features; exact likelihood with trader type marginalized out
-agent/belief.py        exact Bayes filter over (outcome, insider active)
+agent/belief.py        exact Bayes filter over (outcome, insider active); shared observation likelihood
+agent/particle.py      particle filter over the same pair (the proposal's belief update)
 agent/qmdp.py          QMDP solver: finite-horizon value iteration on the fully observed problem
-agent/policies.py      buy-and-hold, QMDP, insider-blind QMDP, oracle
+agent/policies.py      buy-and-hold, QMDP (exact or particle filter), insider-blind QMDP, oracle
 polymarket/data.py     pulls markets and trades from the SII-WANGZJ/Polymarket_data
                        Hugging Face dataset, converted to the YES perspective
 polymarket/selection.py  the markets we pull (calibration and incident)
@@ -30,7 +32,7 @@ polymarket/categories.py  market categories from keyword rules
 polymarket/observation.py  fits P(wallet features | trader type); writes market/wallet_profiles.json
 polymarket/flagged_wallets.csv  publicly flagged wallets with sources (weak insider labels)
 experiments/evaluate.py  runs all policies on the same markets, prints metrics, writes plots
-tests/                 accounting, filter calibration, solver sanity checks
+tests/                 accounting, budget, filter calibration, particle vs exact filter, solver checks
 ```
 
 ## Running
@@ -38,8 +40,9 @@ tests/                 accounting, filter calibration, solver sanity checks
 ```
 pip install numpy matplotlib pytest
 pytest
-python -m experiments.evaluate --markets 1000    # writes results/
-python -m experiments.evaluate --markets 300 --params calibrated
+python -m experiments.evaluate --markets 1000 --out results/toy
+python -m experiments.evaluate --markets 300 --params calibrated --out results/calibrated
+# --particles N sets the particle filter's size (default 2000; 0 skips it)
 ```
 
 ## Polymarket data
@@ -89,28 +92,50 @@ markets.
   category share, longshot record); the trader type stays hidden. `MarketState.flow_types` holds
   the true types for evaluation. `score` is the insider log-likelihood ratio of
   those trades, kept as a one-number summary.
-- A learned wallet-feature model plugs into `BeliefFilter(flow_loglik=...)`, a
+- A learned wallet-feature model plugs into `BeliefFilter(flow_loglik=...)` (or
+  `ParticleFilter`), a
   function `(obs, params) -> log P(trades | outcome, insider)` as a 2x2 array.
   The default, `market.flow.flow_loglik`, is exact for the simulator.
 - Large trades are a sample of the flow, not an extra price driver: the price
   equation is unchanged, and `insider_drift` is the net impact of informed flow.
 - Fills happen at the post-impact price. Filling at the pre-impact price lets a
   policy profit from its own impact.
-- The filter and QMDP use the stub's dynamics. If the simulator's dynamics change,
-  `BeliefFilter.update` and `QMDPSolver._expected_value` must change with them.
+- The filters and QMDP use the stub's dynamics. If the simulator's dynamics change,
+  `agent.belief.observation_loglik` and `QMDPSolver._expected_value` must change with them.
+- Budget: `MarketParams.budget` (default 6, equal to `max_position`) is the starting
+  cash. A trade is shrunk until we can pay out either way (`cash >= 0` and
+  `cash + position >= 0`). `Observation.cash` reports it. QMDP plans without it; the
+  budget only binds after losses.
+
+## Policies and filters
+
+- Buy-and-hold, as in the proposal: from the opening price p0, buy YES if p0 >= 0.5
+  and NO otherwise, spending `fraction` (default 0.5) of the budget, and hold to
+  resolution. At p0 = 0.7 with a budget of 6 that is 4 YES contracts.
+- `ParticleFilter` is a bootstrap filter over (outcome, insider active) with the wallet
+  type summed out inside the flow likelihood, resampled systematically when the effective
+  sample size falls below half. Since the hidden pair has only four values,
+  `BeliefFilter` computes the same posterior exactly; tests check that the two agree
+  (mean gap under 0.02 with 4000 particles). The particle filter is the one to extend
+  when the hidden state grows. Because the outcome never changes, resampling could lose
+  one outcome entirely; a floor keeps at least 0.1% of particles on each.
+- `QMDPPolicy(params, solver, particles=N)` uses the particle filter instead of the
+  exact one.
 
 ## Current results (toy simulator, uncalibrated, 1000 markets)
 
 | Policy | Mean return ($) | Sharpe | Adverse-selection loss | Trades |
 |---|---|---|---|---|
-| buy-and-hold | -0.07 ± 0.04 | -0.05 | 0.00 | 1.0 |
+| buy-and-hold | -0.12 ± 0.06 | -0.06 | 0.00 | 1.0 |
 | QMDP, insider-blind | -0.22 ± 0.06 | -0.12 | 0.73 | 12.9 |
-| QMDP | +1.06 ± 0.06 | 0.61 | 0.12 | 14.9 |
+| QMDP | +1.06 ± 0.06 | 0.60 | 0.12 | 14.8 |
+| QMDP, particle filter (2000) | +1.05 ± 0.06 | 0.59 | 0.11 | 14.9 |
 | oracle | +2.51 ± 0.03 | 2.55 | 0.00 | 8.4 |
 
 The insider-aware filter flags 96% of insiders, with a median delay of 2 steps
 and 28 steps of lead before resolution. 31% of insider-free markets are
-flagged at least once (1.3% of steps) at a 0.5 threshold.
+flagged at least once (1.3% of steps) at a 0.5 threshold. The particle filter's
+detection numbers match to within a percentage point.
 
 These numbers come from a simulator whose dynamics and wallet profiles the
 agent knows exactly, with placeholder parameters that have not yet been fit to
@@ -193,13 +218,15 @@ iterated and it put 2.6-4x too many orders in the insider type.
 
 | Policy | Mean return ($) | Sharpe | Adverse-selection loss | Trades |
 |---|---|---|---|---|
-| buy-and-hold | -0.05 ± 0.08 | -0.03 | 0.00 | 1.0 |
+| buy-and-hold | -0.06 ± 0.12 | -0.03 | 0.00 | 1.0 |
 | QMDP, insider-blind | -0.49 ± 0.15 | -0.19 | 1.55 | 11.6 |
 | QMDP | +1.41 ± 0.14 | 0.59 | 0.18 | 18.1 |
-| oracle | +2.69 ± 0.06 | 2.49 | 0.00 | 7.1 |
+| QMDP, particle filter (2000) | +1.38 ± 0.14 | 0.57 | 0.18 | 18.1 |
+| oracle | +2.69 ± 0.06 | 2.48 | 0.00 | 7.1 |
 
 The filter flags 95% of insiders with a median delay of 2 hours and 43 hours of lead;
-11% of insider-free markets are flagged at least once (0.4% of hours). With trade size as
+11% of insider-free markets are flagged at least once (0.4% of hours); the particle
+filter gives 95% and 12%. With trade size as
 the only wallet feature, false positives rise to 29% and the delay to 5 hours.
 
 Caveats: the insider profile rests on 19 wallets from incidents notable enough to be

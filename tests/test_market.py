@@ -49,3 +49,34 @@ def test_settlement_pays_position_times_outcome():
         state, obs, reward = sim.step(state, action, rng, PARAMS)
     assert state.position == -PARAMS.large_lot
     assert reward == pytest.approx(state.position * state.outcome)
+
+
+def test_order_trades_exact_quantity():
+    params = MarketParams()
+    assert executed_quantity(0, sim.Order(4), params) == 4
+    assert executed_quantity(0, sim.Order(-2), params) == -2
+    assert executed_quantity(4, sim.Order(5), params) == params.max_position - 4
+
+
+def test_trades_are_shrunk_to_stay_solvent():
+    params = MarketParams(max_position=100, budget=2.0, impact=0.0)
+    x = float(sim.logit(0.5))
+    # Two dollars buys four contracts at 0.50, on either side.
+    assert executed_quantity(0, sim.Order(10), params, cash=2.0, log_odds=x) == 4
+    assert executed_quantity(0, sim.Order(-10), params, cash=2.0, log_odds=x) == -4
+    # Selling back a long position is always allowed.
+    assert executed_quantity(4, Action.EXIT, params, cash=0.0, log_odds=x) == -4
+    # Broke and flat: nothing trades.
+    assert executed_quantity(0, Action.BUY_YES_LARGE, params, cash=0.0, log_odds=x) == 0
+
+
+def test_cash_is_tracked_and_never_goes_negative():
+    params = MarketParams(budget=1.0)
+    rng = np.random.default_rng(0)
+    state, obs = sim.reset(params, rng)
+    total = 0.0
+    while not obs.done:
+        state, obs, reward = sim.step(state, Action.BUY_YES_LARGE, rng, params)
+        total += reward
+        assert obs.cash >= -1e-9 and obs.cash + state.position >= -1e-9
+    assert np.isclose(obs.cash, params.budget + total)

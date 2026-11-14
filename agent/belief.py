@@ -1,7 +1,9 @@
 """Exact Bayes filter over the hidden pair (outcome, insider active).
 
 Both are binary and everything else is observed, so the belief is a 2x2 table
-b[outcome, insider]. A particle filter is not needed.
+b[outcome, insider]. Wallet types are summed out inside the flow likelihood.
+`agent.particle.ParticleFilter` is the sampling version the proposal
+describes; it uses the same `observation_loglik` and converges to this filter.
 """
 from __future__ import annotations
 
@@ -28,6 +30,23 @@ def simulator_flow_loglik(obs: Observation, params: MarketParams) -> np.ndarray:
     return flow.flow_loglik(obs.trades, params.flow)
 
 
+def observation_loglik(obs: Observation, prev_log_odds: float, params: MarketParams,
+                       flow_loglik: FlowLogLikelihood = simulator_flow_loglik) -> np.ndarray:
+    """log P(obs | outcome, insider) as a 2x2 array [outcome, insider].
+
+    The price move not explained by our own trade or the news is the insider's
+    drift plus noise; the news and the other participants' trades are scored
+    directly.
+    """
+    p = params
+    unexplained = (float(logit(obs.price)) - prev_log_odds
+                   - p.impact * obs.executed
+                   - p.news_weight * obs.news)
+    return (normal_logpdf(obs.news, p.news_mean * SIGN, p.news_sd)
+            + normal_logpdf(unexplained, p.insider_drift * ACTIVE * SIGN, p.noise_sd)
+            + flow_loglik(obs, p))
+
+
 class BeliefFilter:
     """Tracks b[outcome, insider].
 
@@ -49,24 +68,15 @@ class BeliefFilter:
         return self.belief
 
     def update(self, obs: Observation) -> np.ndarray:
-        p = self.params
-
         predicted = self.belief.copy()
         switched_on = predicted[:, 0] * self.onset_rate
         predicted[:, 0] -= switched_on
         predicted[:, 1] += switched_on
 
-        log_odds = float(logit(obs.price))
-        unexplained = (log_odds - self.log_odds
-                       - p.impact * obs.executed
-                       - p.news_weight * obs.news)
-        loglik = (normal_logpdf(obs.news, p.news_mean * SIGN, p.news_sd)
-                  + normal_logpdf(unexplained, p.insider_drift * ACTIVE * SIGN, p.noise_sd)
-                  + self.flow_loglik(obs, p))
-
+        loglik = observation_loglik(obs, self.log_odds, self.params, self.flow_loglik)
         posterior = predicted * np.exp(loglik - loglik.max())
         self.belief = posterior / posterior.sum()
-        self.log_odds = log_odds
+        self.log_odds = float(logit(obs.price))
         return self.belief
 
     @property

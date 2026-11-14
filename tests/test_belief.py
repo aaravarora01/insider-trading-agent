@@ -39,3 +39,15 @@ def test_outcome_belief_is_calibrated():
 def test_insider_blind_filter_never_suspects_an_insider():
     prob, _, _, _ = simulate(BeliefFilter(PARAMS, model_insiders=False), markets=20)
     assert np.all(prob == 0.0)
+
+
+def test_buy_and_hold_spends_a_fraction_of_the_budget():
+    from agent.policies import BuyAndHold
+    params = MarketParams(budget=10.0, max_position=100)
+    policy = BuyAndHold(params, fraction=0.5)
+    obs = sim.Observation(t=0, price=0.7, news=0.0, score=0.0, executed=0, done=False)
+    policy.reset(obs)
+    assert policy.act() == sim.Order(7)        # 5 / 0.70 -> 7 YES contracts
+    assert policy.act() == Action.HOLD
+    policy.reset(sim.Observation(t=0, price=0.2, news=0.0, score=0.0, executed=0, done=False))
+    assert policy.act() == sim.Order(-6)       # 5 / 0.80 -> 6 NO contracts
