@@ -1,0 +1,99 @@
+{
+  "method": "supervised, weak labels weighted per wallet; see polymarket/observation.py",
+  "profiles": {
+    "retail": {
+      "size_log_mean": 8.726892674672014,
+      "size_log_sd": 0.9896675802666048,
+      "fresh_prob": 0.10472673035262127,
+      "age_log_mean": 4.14863774079082,
+      "age_log_sd": 2.181575662353846,
+      "category_a": 0.5773805390146233,
+      "category_b": 1.1443365029791293,
+      "longshot_prob": 0.8723522411741592,
+      "longshot_log_mean": 3.306095078966075,
+      "longshot_log_sd": 2.008710216795296,
+      "win_a": 1.2810144531670102,
+      "win_b": 10.295217191264236
+    },
+    "insider": {
+      "size_log_mean": 9.54846258018816,
+      "size_log_sd": 1.3430101514668824,
+      "fresh_prob": 0.4842775798776177,
+      "age_log_mean": 1.3370365650779976,
+      "age_log_sd": 2.6963148472103597,
+      "category_a": 2.5700339702050266,
+      "category_b": 0.8664142858321295,
+      "longshot_prob": 0.5640764844844993,
+      "longshot_log_mean": 1.1110992094895706,
+      "longshot_log_sd": 1.063516393841926,
+      "win_a": 0.42717893036858307,
+      "win_b": 0.9646662276071641
+    },
+    "copybot": {
+      "size_log_mean": 8.741458210954304,
+      "size_log_sd": 0.9773472003590762,
+      "fresh_prob": 0.023728591049496112,
+      "age_log_mean": 4.950722315652533,
+      "age_log_sd": 1.6446045071783666,
+      "category_a": 0.519291494514042,
+      "category_b": 1.1771569867129943,
+      "longshot_prob": 0.9339491726154862,
+      "longshot_log_mean": 5.294948937029735,
+      "longshot_log_sd": 1.971784181293484,
+      "win_a": 1.801190168178921,
+      "win_b": 15.277281536042429
+    }
+  },
+  "evaluation": {
+    "leave_one_incident_out_auc": {
+      "1198423": 0.891643262768372,
+      "1419011": 0.8404128703931708,
+      "1706788": 0.9253184968933656,
+      "532742": 0.9831130129135783,
+      "554010": 0.9579238329238329,
+      "560868": 0.9488636363636364,
+      "635246": 0.6328151986183074,
+      "916440": 0.9720101781170484
+    },
+    "median_auc": 0.9370910666285011,
+    "in_sample_auc": 0.9031175334977158
+  },
+  "data": {
+    "large_orders": 35073,
+    "wallets": 9816,
+    "insider_labelled_orders": 195,
+    "insider_labelled_wallets": 19,
+    "copybot_wallets": 146,
+    "copybot_labelled_orders": 6719,
+    "copy_pairs": 472,
+    "feature_means_by_label": {
+      "copybot": {
+        "orders": 6719,
+        "median_contracts": 4942.0,
+        "fresh": 0.019,
+        "median_age_days": 294.365,
+        "category_share": 0.323,
+        "has_longshots": 0.946,
+        "win_rate": 0.097
+      },
+      "insider": {
+        "orders": 195,
+        "median_contracts": 6775.79,
+        "fresh": 0.308,
+        "median_age_days": 1.271,
+        "category_share": 0.748,
+        "has_longshots": 0.313,
+        "win_rate": 0.249
+      },
+      "unlabeled": {
+        "orders": 28159,
+        "median_contracts": 5000.0,
+        "fresh": 0.105,
+        "median_age_days": 109.853,
+        "category_share": 0.335,
+        "has_longshots": 0.781,
+        "win_rate": 0.111
+      }
+    }
+  }
+}

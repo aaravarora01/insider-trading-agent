@@ -9,9 +9,19 @@ Each step, three kinds of trader place large trades:
 
 Each (trader type, side) pair is an independent Poisson stream, so the trades
 in a step form a marked Poisson process. We observe each trade's side, its
-size, and the wallet behind it (age, whether it was freshly funded, how
-concentrated it is in this market's category, and its record on longshot
-bets). We do not observe the trader type.
+size, and the wallet behind it, but not the trader type. Wallet features,
+all measurable from public trade history:
+
+    fresh           no trades in any other market before this one
+    and, for wallets that are not fresh:
+    age             days since the wallet's first trade in another market
+    category_share  share of its earlier markets in this market's category
+    longshots       how many earlier bets it placed at a price below 0.2 that
+                    have resolved, and its smoothed win rate on them
+
+Fresh wallets have no history, so the other features are undefined for them
+rather than counted as extra evidence. Features are independent given the
+trader type. `polymarket.observation` fits the profiles to Polymarket data.
 
 Because the process is Poisson, the likelihood of a step's trades given the
 outcome Y and insider status I has a closed form with the type marginalized
@@ -51,30 +61,37 @@ class WalletProfile:
 
     size_log_mean: float        # log contracts (payout exposure, same on either side)
     size_log_sd: float
-    age_log_mean: float         # log days since the wallet first traded
+    fresh_prob: float           # no trades in any other market before this one
+    # The rest describe wallets that are not fresh.
+    age_log_mean: float         # log days since first trade in another market
     age_log_sd: float
-    new_funding_prob: float     # funded from a fresh source just before trading
-    category_a: float           # Beta(a, b) share of past volume in this category
+    category_a: float           # Beta(a, b) share of earlier markets in this category
     category_b: float
-    longshot_bets_mean: float   # Poisson mean of past bets placed at price < 0.2
-    longshot_win_prob: float    # chance each of those bets won
+    longshot_prob: float        # has at least one resolved longshot bet
+    longshot_log_mean: float    # log number of resolved longshot bets, if any
+    longshot_log_sd: float
+    win_a: float                # Beta(a, b) smoothed win rate on those bets
+    win_b: float
 
 
-# Placeholder values until they are fit to Polymarket data. They are chosen so
-# that no single feature separates the types: a fresh wallet is more likely to
-# be an insider, but plenty of retail wallets are fresh too.
-RETAIL = WalletProfile(size_log_mean=math.log(800), size_log_sd=1.0,
+# Placeholder values for the toy simulator; `polymarket.observation` fits real
+# ones. No single feature separates the types: fresh wallets lean insider, but
+# plenty of retail wallets are fresh too.
+RETAIL = WalletProfile(size_log_mean=math.log(800), size_log_sd=1.0, fresh_prob=0.15,
                        age_log_mean=math.log(120), age_log_sd=1.3,
-                       new_funding_prob=0.15, category_a=2.0, category_b=4.0,
-                       longshot_bets_mean=6.0, longshot_win_prob=0.10)
-INSIDER = WalletProfile(size_log_mean=math.log(2400), size_log_sd=1.0,
+                       category_a=2.0, category_b=4.0, longshot_prob=0.6,
+                       longshot_log_mean=math.log(6), longshot_log_sd=1.0,
+                       win_a=2.0, win_b=12.0)
+INSIDER = WalletProfile(size_log_mean=math.log(2400), size_log_sd=1.0, fresh_prob=0.45,
                         age_log_mean=math.log(30), age_log_sd=1.5,
-                        new_funding_prob=0.45, category_a=3.0, category_b=2.5,
-                        longshot_bets_mean=4.0, longshot_win_prob=0.30)
-COPYBOT = WalletProfile(size_log_mean=math.log(1200), size_log_sd=0.8,
+                        category_a=3.0, category_b=2.5, longshot_prob=0.5,
+                        longshot_log_mean=math.log(4), longshot_log_sd=1.0,
+                        win_a=3.0, win_b=6.0)
+COPYBOT = WalletProfile(size_log_mean=math.log(1200), size_log_sd=0.8, fresh_prob=0.10,
                         age_log_mean=math.log(150), age_log_sd=1.0,
-                        new_funding_prob=0.10, category_a=1.5, category_b=3.0,
-                        longshot_bets_mean=12.0, longshot_win_prob=0.14)
+                        category_a=1.5, category_b=3.0, longshot_prob=0.8,
+                        longshot_log_mean=math.log(15), longshot_log_sd=1.0,
+                        win_a=2.5, win_b=12.0)
 
 
 @dataclass(frozen=True)
@@ -89,15 +106,20 @@ class FlowParams:
 
 @dataclass(frozen=True)
 class LargeTrade:
-    """One observed trade. `side` is +1 for YES and -1 for NO."""
+    """One observed trade. `side` is +1 for YES and -1 for NO.
+
+    For a fresh wallet, `age_days`, `category_share` and `longshot_win_rate` are
+    NaN and `longshot_bets` is 0; `longshot_win_rate` is also NaN with no bets.
+    The win rate is smoothed: (wins + 0.5) / (bets + 1).
+    """
 
     side: int
     contracts: float
-    wallet_age_days: float
-    new_funding: bool
+    fresh: bool
+    age_days: float
     category_share: float
     longshot_bets: int
-    longshot_wins: int
+    longshot_win_rate: float
 
 
 def side_index(side: int) -> int:
@@ -122,16 +144,19 @@ def _rate_table(flow: FlowParams) -> np.ndarray:
 
 def sample_wallet(profile: WalletProfile, side: int,
                   rng: np.random.Generator) -> LargeTrade:
-    bets = int(rng.poisson(profile.longshot_bets_mean))
-    return LargeTrade(
-        side=side,
-        contracts=float(rng.lognormal(profile.size_log_mean, profile.size_log_sd)),
-        wallet_age_days=float(rng.lognormal(profile.age_log_mean, profile.age_log_sd)),
-        new_funding=bool(rng.random() < profile.new_funding_prob),
-        category_share=float(rng.beta(profile.category_a, profile.category_b)),
-        longshot_bets=bets,
-        longshot_wins=int(rng.binomial(bets, profile.longshot_win_prob)),
-    )
+    """Draw one trade. Always uses the same random numbers, whatever the branch."""
+    p = profile
+    u = rng.random(2)
+    contracts, age, bets = rng.lognormal([p.size_log_mean, p.age_log_mean, p.longshot_log_mean],
+                                         [p.size_log_sd, p.age_log_sd, p.longshot_log_sd])
+    category, win_rate = rng.beta([p.category_a, p.win_a], [p.category_b, p.win_b])
+    fresh, has_longshots = bool(u[0] < p.fresh_prob), bool(u[1] < p.longshot_prob)
+    if fresh:
+        return LargeTrade(side, float(contracts), True, math.nan, math.nan, 0, math.nan)
+    if not has_longshots:
+        return LargeTrade(side, float(contracts), False, float(age), float(category), 0, math.nan)
+    return LargeTrade(side, float(contracts), False, float(age), float(category),
+                      max(int(round(bets)), 1), float(win_rate))
 
 
 def sample_flow(outcome: int, insider: bool, flow: FlowParams,
@@ -149,17 +174,15 @@ def sample_flow(outcome: int, insider: bool, flow: FlowParams,
     return trades, types
 
 
-_lgamma = np.vectorize(math.lgamma, otypes=[float])
-
-
-def _features(trades: tuple[LargeTrade, ...]) -> dict[str, np.ndarray]:
+def features(trades) -> dict[str, np.ndarray]:
+    """Column arrays from LargeTrade objects (or anything with the same attributes)."""
     return {
-        "size": np.array([t.contracts for t in trades]),
-        "age": np.array([t.wallet_age_days for t in trades]),
-        "new_funding": np.array([t.new_funding for t in trades], dtype=bool),
-        "category": np.clip([t.category_share for t in trades], 1e-9, 1 - 1e-9),
-        "bets": np.array([t.longshot_bets for t in trades], dtype=float),
-        "wins": np.array([t.longshot_wins for t in trades], dtype=float),
+        "contracts": np.array([t.contracts for t in trades], dtype=float),
+        "fresh": np.array([t.fresh for t in trades], dtype=bool),
+        "age_days": np.array([t.age_days for t in trades], dtype=float),
+        "category_share": np.array([t.category_share for t in trades], dtype=float),
+        "longshot_bets": np.array([t.longshot_bets for t in trades], dtype=float),
+        "longshot_win_rate": np.array([t.longshot_win_rate for t in trades], dtype=float),
     }
 
 
@@ -168,24 +191,35 @@ def _lognormal_logpdf(x, log_mean, log_sd):
     return -0.5 * z ** 2 - np.log(log_sd) - np.log(x) - 0.5 * math.log(2 * math.pi)
 
 
+def _beta_logpdf(x, a, b):
+    x = np.clip(x, 1e-6, 1 - 1e-6)
+    log_norm = math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+    return (a - 1) * np.log(x) + (b - 1) * np.log1p(-x) - log_norm
+
+
+def feature_loglik(x: dict[str, np.ndarray], profile: WalletProfile) -> np.ndarray:
+    """log f_k(features) per trade under one trader type, from `features(...)` arrays."""
+    p = profile
+    fresh = x["fresh"]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        history = (math.log1p(-p.fresh_prob)
+                   + _lognormal_logpdf(np.maximum(x["age_days"], 1 / 24),
+                                       p.age_log_mean, p.age_log_sd)
+                   + _beta_logpdf(x["category_share"], p.category_a, p.category_b))
+        bets = x["longshot_bets"]
+        longshots = np.where(
+            bets > 0,
+            math.log(p.longshot_prob)
+            + _lognormal_logpdf(np.maximum(bets, 1), p.longshot_log_mean, p.longshot_log_sd)
+            + _beta_logpdf(x["longshot_win_rate"], p.win_a, p.win_b),
+            math.log1p(-p.longshot_prob))
+    wallet = np.where(fresh, math.log(p.fresh_prob), history + longshots)
+    return _lognormal_logpdf(x["contracts"], p.size_log_mean, p.size_log_sd) + wallet
+
+
 def wallet_loglik(trades: tuple[LargeTrade, ...], profile: WalletProfile) -> np.ndarray:
     """log f_k(features) for each trade under one trader type. Side is excluded."""
-    x = _features(trades)
-    p = profile
-    funding = np.where(x["new_funding"], math.log(p.new_funding_prob),
-                       math.log1p(-p.new_funding_prob))
-    log_beta = math.lgamma(p.category_a) + math.lgamma(p.category_b) \
-        - math.lgamma(p.category_a + p.category_b)
-    category = ((p.category_a - 1) * np.log(x["category"])
-                + (p.category_b - 1) * np.log1p(-x["category"]) - log_beta)
-    bets, wins = x["bets"], x["wins"]
-    longshots = (bets * math.log(p.longshot_bets_mean) - p.longshot_bets_mean
-                 - _lgamma(wins + 1) - _lgamma(bets - wins + 1)
-                 + wins * math.log(p.longshot_win_prob)
-                 + (bets - wins) * math.log1p(-p.longshot_win_prob))
-    return (_lognormal_logpdf(x["size"], p.size_log_mean, p.size_log_sd)
-            + _lognormal_logpdf(x["age"], p.age_log_mean, p.age_log_sd)
-            + funding + category + longshots)
+    return feature_loglik(features(trades), profile)
 
 
 def flow_loglik(trades: tuple[LargeTrade, ...], flow: FlowParams) -> np.ndarray:

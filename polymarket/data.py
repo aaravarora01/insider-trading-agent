@@ -98,9 +98,10 @@ def _outcome(outcome_prices: str | None) -> float:
     return np.nan
 
 
-def _open_trades():
+def _open_trades(**kwargs):
     from huggingface_hub import HfFileSystem
-    return HfFileSystem().open(f"{HF_PATH}/trades.parquet", block_size=8 * 2**20)
+    kwargs = kwargs or {"block_size": 8 * 2**20}
+    return HfFileSystem().open(f"{HF_PATH}/trades.parquet", **kwargs)
 
 
 def _row_group_starts(metadata: pq.FileMetaData) -> np.ndarray:

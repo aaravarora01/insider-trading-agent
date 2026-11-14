@@ -25,6 +25,9 @@ polymarket/data.py     pulls markets and trades from the SII-WANGZJ/Polymarket_d
                        Hugging Face dataset, converted to the YES perspective
 polymarket/selection.py  the markets we pull (calibration and incident)
 polymarket/calibrate.py  estimates the simulator's parameters; writes market/calibrated.json
+polymarket/history.py  each large trader's history across all markets (11 GB scan)
+polymarket/categories.py  market categories from keyword rules
+polymarket/observation.py  fits P(wallet features | trader type); writes market/wallet_profiles.json
 polymarket/flagged_wallets.csv  publicly flagged wallets with sources (weak insider labels)
 experiments/evaluate.py  runs all policies on the same markets, prints metrics, writes plots
 tests/                 accounting, filter calibration, solver sanity checks
@@ -82,8 +85,8 @@ markets.
   `step(state, action, rng, params) -> (MarketState, Observation, reward)`.
 - `step` must be a pure function of its arguments; planners call it on sampled states.
 - Policies see only `Observation`. `Observation.trades` lists other participants'
-  large trades (side, contracts, wallet age, fresh funding, category share,
-  longshot record); the trader type stays hidden. `MarketState.flow_types` holds
+  large trades (side, contracts, and wallet features: fresh wallet, age,
+  category share, longshot record); the trader type stays hidden. `MarketState.flow_types` holds
   the true types for evaluation. `score` is the insider log-likelihood ratio of
   those trades, kept as a one-number summary.
 - A learned wallet-feature model plugs into `BeliefFilter(flow_loglik=...)`, a
@@ -101,13 +104,13 @@ markets.
 | Policy | Mean return ($) | Sharpe | Adverse-selection loss | Trades |
 |---|---|---|---|---|
 | buy-and-hold | -0.07 ± 0.04 | -0.05 | 0.00 | 1.0 |
-| QMDP, insider-blind | -0.27 ± 0.06 | -0.15 | 0.72 | 13.1 |
-| QMDP | +1.02 ± 0.06 | 0.59 | 0.07 | 14.4 |
-| oracle | +2.51 ± 0.03 | 2.56 | 0.00 | 9.0 |
+| QMDP, insider-blind | -0.22 ± 0.06 | -0.12 | 0.73 | 12.9 |
+| QMDP | +1.06 ± 0.06 | 0.61 | 0.12 | 14.9 |
+| oracle | +2.51 ± 0.03 | 2.55 | 0.00 | 8.4 |
 
 The insider-aware filter flags 96% of insiders, with a median delay of 2 steps
-and 29 steps of lead before resolution. 23% of insider-free markets are
-flagged at least once (1.1% of steps) at a 0.5 threshold.
+and 28 steps of lead before resolution. 31% of insider-free markets are
+flagged at least once (1.3% of steps) at a 0.5 threshold.
 
 These numbers come from a simulator whose dynamics and wallet profiles the
 agent knows exactly, with placeholder parameters that have not yet been fit to
@@ -133,9 +136,8 @@ a taker order of at least 2,000 contracts. The method is in the module docstring
 | trade sizes | median ~5.6k (uninformed), ~7.7k (insider) contracts | lognormal fits |
 
 Design choices, not estimates: a 72-hour horizon; `onset_rate` set so half of simulated
-markets have an insider by the end; copy-bots as 1/7 of uninformed flow; wallet age,
-funding, category share and longshot record keep placeholder values until the wallet
-model (task 4).
+markets have an insider by the end; copy-bots as 1/7 of uninformed flow. Wallet
+features come from the observation model below.
 
 Findings that shaped the method:
 - Use a contract threshold, not USD. $1k buys ten times more contracts on a longshot than
@@ -151,8 +153,56 @@ Findings that shaped the method:
 - Many flagged wallets traded with limit orders (taker on 6-30% of fills for some), so
   insider orders are counted in either role.
 
-Calibrated results (300 markets): buy-and-hold -0.05 ± 0.08, insider-blind QMDP
--0.36 ± 0.15, QMDP +1.52 ± 0.14 (Sharpe 0.63), oracle +2.63 ± 0.07. The filter flags 96% of
-insiders with a median delay of 2 hours; 16% of insider-free markets are flagged at least
-once. With the placeholder wallet features made identical across types, QMDP still earns
-+1.40, but the delay rises to 5 hours and false positives to 29%.
+## Wallet observation model
+
+`python -m polymarket.history` scans each large trader's activity across every market
+(about 11 GB of `trades.parquet` columns over HTTP; resumable). `python -m
+polymarket.observation` then fits P(wallet features | retail / insider / copy-bot) and
+writes `market/wallet_profiles.json`, which `calibrated_params()` picks up.
+
+Features (`market/flow.py`), all computed from the wallet's trades in *other* markets
+before the order, so an insider's winning bet never feeds its own features:
+
+- **fresh**: no earlier trades anywhere else. The dataset has no funding source, so this
+  stands in for the proposal's "funding source" feature.
+- for wallets that are not fresh: **age** (days since first trade elsewhere),
+  **category share** (smoothed share of earlier markets in this market's category, from
+  keyword rules in `polymarket/categories.py`), and **longshot record** (resolved bets
+  bought below 20c: whether any, how many, smoothed win rate).
+
+Weak labels: flagged wallets' winning-side orders before the reveal are insiders,
+weighted by flag confidence; wallets that place a same-side order within 60 s of the
+same other wallet at least 3 times are copy-bots; everyone else is treated as retail.
+Each wallet counts once per market. 35,073 large orders from 9,816 wallets; 195 insider
+orders from 19 wallets; 146 copy-bot wallets.
+
+| Type | Median size | Fresh | Median age | Category share | Has longshots | Win rate |
+|---|---|---|---|---|---|---|
+| retail | 6.2k | 10% | 63 d | 0.34 | 87% | 0.11 |
+| insider | 14.0k | 48% | 4 d | 0.75 | 56% | 0.31 |
+| copy-bot | 6.3k | 2% | 141 d | 0.31 | 93% | 0.11 |
+
+Leave-one-incident-out AUC for telling flagged orders from other large orders in the same
+market: median 0.94 (0.63 for Google/AlphaRaccoon, an established wallet; 0.84-0.98 for
+the rest).
+
+Semi-supervised EM was tried and dropped: on simulated data its likelihood fell as it
+iterated and it put 2.6-4x too many orders in the insider type.
+
+## Calibrated results (300 markets, fitted wallet profiles)
+
+| Policy | Mean return ($) | Sharpe | Adverse-selection loss | Trades |
+|---|---|---|---|---|
+| buy-and-hold | -0.05 ± 0.08 | -0.03 | 0.00 | 1.0 |
+| QMDP, insider-blind | -0.49 ± 0.15 | -0.19 | 1.55 | 11.6 |
+| QMDP | +1.41 ± 0.14 | 0.59 | 0.18 | 18.1 |
+| oracle | +2.69 ± 0.06 | 2.49 | 0.00 | 7.1 |
+
+The filter flags 95% of insiders with a median delay of 2 hours and 43 hours of lead;
+11% of insider-free markets are flagged at least once (0.4% of hours). With trade size as
+the only wallet feature, false positives rise to 29% and the delay to 5 hours.
+
+Caveats: the insider profile rests on 19 wallets from incidents notable enough to be
+reported; one wallet's orders are treated as independent trades, so replaying real
+markets will overcount repeat orders; and the uninformed rate should vary with time to
+resolution before replay.

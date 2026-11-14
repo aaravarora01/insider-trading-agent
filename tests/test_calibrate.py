@@ -44,11 +44,12 @@ def test_calibrated_params_load_and_run():
     assert params.horizon == report["params"]["horizon"]
     assert params.flow.retail_rate == pytest.approx(report["params"]["flow"]["retail_rate"])
     assert params.news_weight == pytest.approx(2 * params.news_mean)
-    assert params.flow.profiles[1].size_log_mean == pytest.approx(
-        report["params"]["flow"]["profiles"]["insider"]["size_log_mean"])
-    # Features task 3 does not fit keep their placeholder values.
-    from market.flow import INSIDER
-    assert params.flow.profiles[1].age_log_mean == INSIDER.age_log_mean
+    # Wallet profiles come from wallet_profiles.json when it exists.
+    from market.calibration import PROFILES_PATH
+    import json
+    fitted = json.loads(PROFILES_PATH.read_text())["profiles"]["insider"]
+    assert params.flow.profiles[1].age_log_mean == pytest.approx(fitted["age_log_mean"])
+    assert params.flow.profiles[1].fresh_prob == pytest.approx(fitted["fresh_prob"])
 
     rng = np.random.default_rng(0)
     state, obs = sim.reset(params, rng)
