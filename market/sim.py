@@ -15,7 +15,11 @@ otherwise:
     x' = x + impact * dq + news_weight * news + insider_drift * insider * s + noise
     news  ~ N(news_mean * s, news_sd^2)
     noise ~ N(0, noise_sd^2)
-    score ~ N(score_mean[insider], score_sd^2)
+
+Each step also reports the large trades placed by other participants (retail,
+the insider, copy-bots) with the wallet features behind them; see
+`market.flow`. `score` summarizes them as a log-likelihood ratio for an active
+insider.
 
 An inactive insider becomes active with probability `onset_rate` per step and
 stays active. Setting news_weight = 2 * news_mean / news_sd^2 makes the price
@@ -29,10 +33,12 @@ position * outcome.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import IntEnum
 
 import numpy as np
+
+from market.flow import FlowParams, LargeTrade, flow_loglik, insider_score, sample_flow
 
 
 @dataclass(frozen=True)
@@ -44,8 +50,7 @@ class MarketParams:
     news_sd: float = 1.0
     news_weight: float = 0.30
     noise_sd: float = 0.15
-    score_mean: tuple[float, float] = (0.0, 1.0)
-    score_sd: float = 1.0
+    flow: FlowParams = field(default_factory=FlowParams)
     impact: float = 0.02
     fee: float = 0.0
     small_lot: int = 1
@@ -70,6 +75,7 @@ class MarketState:
     position: int
     outcome: int
     onset: int | None  # step at which the insider became active
+    flow_types: tuple[int, ...] = ()  # true TraderType of each trade in the last Observation
 
     @property
     def price(self) -> float:
@@ -85,9 +91,10 @@ class Observation:
     t: int
     price: float
     news: float
-    score: float     # summary of order flow / wallet features
+    score: float     # insider log-likelihood ratio of `trades`
     executed: int    # signed contracts we traded on the last step
     done: bool
+    trades: tuple[LargeTrade, ...] = ()  # other participants' large trades this step
 
 
 def sigmoid(x):
@@ -152,14 +159,16 @@ def step(state: MarketState, action: Action, rng: np.random.Generator,
                 + params.news_weight * news
                 + params.insider_drift * insider * s
                 + rng.normal(0.0, params.noise_sd))
-    score = rng.normal(params.score_mean[insider], params.score_sd)
+    trades, types = sample_flow(state.outcome, insider, params.flow, rng)
+    score = insider_score(flow_loglik(trades, params.flow))
 
     t = state.t + 1
     done = t >= params.horizon
     if done:
         reward += position * state.outcome
 
-    next_state = replace(state, t=t, log_odds=log_odds, position=position, onset=onset)
+    next_state = replace(state, t=t, log_odds=log_odds, position=position, onset=onset,
+                         flow_types=types)
     obs = Observation(t=t, price=float(sigmoid(log_odds)), news=news, score=score,
-                      executed=quantity, done=done)
+                      executed=quantity, done=done, trades=trades)
     return next_state, obs, reward

@@ -9,9 +9,11 @@ from typing import Callable
 
 import numpy as np
 
+from market import flow
 from market.sim import MarketParams, Observation, logit
 
-ScoreLogLikelihood = Callable[[float, int, MarketParams], float]
+# log P(other participants' trades | outcome, insider), indexed [outcome, insider].
+FlowLogLikelihood = Callable[[Observation, MarketParams], np.ndarray]
 
 SIGN = np.array([[-1.0], [1.0]])     # rows: outcome NO, YES
 ACTIVE = np.array([[0.0, 1.0]])      # columns: insider inactive, active
@@ -21,8 +23,9 @@ def normal_logpdf(x, mean, sd):
     return -0.5 * ((x - mean) / sd) ** 2 - np.log(sd)
 
 
-def gaussian_score(score: float, insider: int, params: MarketParams) -> float:
-    return normal_logpdf(score, params.score_mean[insider], params.score_sd)
+def simulator_flow_loglik(obs: Observation, params: MarketParams) -> np.ndarray:
+    """The simulator's own flow model, with wallet type marginalized out."""
+    return flow.flow_loglik(obs.trades, params.flow)
 
 
 class BeliefFilter:
@@ -30,14 +33,14 @@ class BeliefFilter:
 
     `model_insiders=False` gives the insider-blind ablation: it assumes no
     insider ever appears, so all price moves are read as news or noise.
-    `score_loglik` is where a learned wallet-feature model plugs in.
+    `flow_loglik` is where a learned wallet-feature model plugs in.
     """
 
     def __init__(self, params: MarketParams, model_insiders: bool = True,
-                 score_loglik: ScoreLogLikelihood = gaussian_score):
+                 flow_loglik: FlowLogLikelihood = simulator_flow_loglik):
         self.params = params
         self.onset_rate = params.onset_rate if model_insiders else 0.0
-        self.score_loglik = score_loglik
+        self.flow_loglik = flow_loglik
 
     def reset(self, obs: Observation) -> np.ndarray:
         self.belief = np.array([[1.0 - obs.price, 0.0],
@@ -57,10 +60,9 @@ class BeliefFilter:
         unexplained = (log_odds - self.log_odds
                        - p.impact * obs.executed
                        - p.news_weight * obs.news)
-        score = np.array([[self.score_loglik(obs.score, i, p) for i in (0, 1)]])
         loglik = (normal_logpdf(obs.news, p.news_mean * SIGN, p.news_sd)
                   + normal_logpdf(unexplained, p.insider_drift * ACTIVE * SIGN, p.noise_sd)
-                  + score)
+                  + self.flow_loglik(obs, p))
 
         posterior = predicted * np.exp(loglik - loglik.max())
         self.belief = posterior / posterior.sum()
