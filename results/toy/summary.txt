@@ -1,0 +1,15 @@
+policy                              return  sharpe  adverse  trades
+-------------------------------------------------------------------
+buy-and-hold                  -0.12 ± 0.06   -0.06     0.00     1.0
+QMDP (insider-blind)          -0.22 ± 0.06   -0.12     0.73    12.9
+QMDP                          +1.06 ± 0.06    0.60     0.12    14.8
+QMDP (particle filter)        +1.05 ± 0.06    0.59     0.11    14.9
+oracle                        +2.51 ± 0.03    2.55     0.00     8.4
+
+detection                                         QMDP  QMDP (particle filter)
+markets_with_insider                           625.000                 625.000
+detected_share                                   0.960                   0.958
+median_delay_steps                               2.000                   2.000
+median_lead_steps                               28.000                  28.000
+false_positive_rate_markets                      0.309                   0.307
+false_positive_rate_steps                        0.013                   0.014

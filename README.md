@@ -32,6 +32,8 @@ polymarket/categories.py  market categories from keyword rules
 polymarket/observation.py  fits P(wallet features | trader type); writes market/wallet_profiles.json
 polymarket/flagged_wallets.csv  publicly flagged wallets with sources (weak insider labels)
 experiments/evaluate.py  runs all policies on the same markets, prints metrics, writes plots
+results/               evaluation outputs (figures, metrics.json, summary.txt) and
+                       status_update_notes.md: numbers, figures and caveats for the status update
 tests/                 accounting, budget, filter calibration, particle vs exact filter, solver checks
 ```
 

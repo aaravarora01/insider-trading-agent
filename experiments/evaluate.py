@@ -174,8 +174,11 @@ def main() -> None:
     report = {"params": asdict(params), "markets": args.markets,
               "trading": trading, "detection": detection}
     (args.out / "metrics.json").write_text(json.dumps(report, indent=2, default=float))
-    plots.belief_traces(episodes["QMDP"], args.out / "belief_traces.png")
+    unit = "step" if args.params == "toy" else "hour"
+    plots.belief_traces(episodes["QMDP"], args.out / "belief_traces.png", unit=unit)
     plots.return_distributions(episodes, args.out / "returns.png")
+    plots.onset_aligned({name: episodes[name] for name in filters},
+                        args.out / "onset_aligned.png", unit=unit)
 
 
 if __name__ == "__main__":

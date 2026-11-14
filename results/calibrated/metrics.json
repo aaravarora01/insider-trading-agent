@@ -1,0 +1,127 @@
+{
+  "params": {
+    "horizon": 72,
+    "onset_rate": 0.009580852533173756,
+    "insider_drift": 0.02690245606457169,
+    "news_mean": 0.01031840380635256,
+    "news_sd": 1.0,
+    "news_weight": 0.02063680761270512,
+    "noise_sd": 0.05401245010740672,
+    "flow": {
+      "retail_rate": 2.8690476190476195,
+      "insider_rate": 0.7929292929292929,
+      "copy_base_rate": 0.47817460317460314,
+      "copy_follow_rate": 0.29090909090909123,
+      "profiles": [
+        {
+          "size_log_mean": 8.726892674672014,
+          "size_log_sd": 0.9896675802666048,
+          "fresh_prob": 0.10472673035262127,
+          "age_log_mean": 4.14863774079082,
+          "age_log_sd": 2.181575662353846,
+          "category_a": 0.5773805390146233,
+          "category_b": 1.1443365029791293,
+          "longshot_prob": 0.8723522411741592,
+          "longshot_log_mean": 3.306095078966075,
+          "longshot_log_sd": 2.008710216795296,
+          "win_a": 1.2810144531670102,
+          "win_b": 10.295217191264236
+        },
+        {
+          "size_log_mean": 9.54846258018816,
+          "size_log_sd": 1.3430101514668824,
+          "fresh_prob": 0.4842775798776177,
+          "age_log_mean": 1.3370365650779976,
+          "age_log_sd": 2.6963148472103597,
+          "category_a": 2.5700339702050266,
+          "category_b": 0.8664142858321295,
+          "longshot_prob": 0.5640764844844993,
+          "longshot_log_mean": 1.1110992094895706,
+          "longshot_log_sd": 1.063516393841926,
+          "win_a": 0.42717893036858307,
+          "win_b": 0.9646662276071641
+        },
+        {
+          "size_log_mean": 8.741458210954304,
+          "size_log_sd": 0.9773472003590762,
+          "fresh_prob": 0.023728591049496112,
+          "age_log_mean": 4.950722315652533,
+          "age_log_sd": 1.6446045071783666,
+          "category_a": 0.519291494514042,
+          "category_b": 1.1771569867129943,
+          "longshot_prob": 0.9339491726154862,
+          "longshot_log_mean": 5.294948937029735,
+          "longshot_log_sd": 1.971784181293484,
+          "win_a": 1.801190168178921,
+          "win_b": 15.277281536042429
+        }
+      ]
+    },
+    "impact": 0.0006484085185137565,
+    "fee": 0.0,
+    "small_lot": 1,
+    "large_lot": 3,
+    "max_position": 6,
+    "budget": 6.0,
+    "initial_price_range": [
+      0.2,
+      0.8
+    ]
+  },
+  "markets": 300,
+  "trading": {
+    "buy-and-hold": {
+      "mean_return": -0.058215643029053535,
+      "stderr_return": 0.11646720150020363,
+      "sharpe": -0.028858611472528987,
+      "adverse_selection_loss": 0.0,
+      "trades_per_market": 1.0
+    },
+    "QMDP (insider-blind)": {
+      "mean_return": -0.485721158374964,
+      "stderr_return": 0.1455707907155391,
+      "sharpe": -0.19264252131931803,
+      "adverse_selection_loss": 1.547923314844159,
+      "trades_per_market": 11.583333333333334
+    },
+    "QMDP": {
+      "mean_return": 1.4084969352152321,
+      "stderr_return": 0.13870950294021325,
+      "sharpe": 0.5862583798961358,
+      "adverse_selection_loss": 0.17575716202390795,
+      "trades_per_market": 18.063333333333333
+    },
+    "QMDP (particle filter)": {
+      "mean_return": 1.3813758696916199,
+      "stderr_return": 0.14090487826663994,
+      "sharpe": 0.5660114397950775,
+      "adverse_selection_loss": 0.17561501482102387,
+      "trades_per_market": 18.123333333333335
+    },
+    "oracle": {
+      "mean_return": 2.688161635944472,
+      "stderr_return": 0.06250094249202824,
+      "sharpe": 2.4831799045841887,
+      "adverse_selection_loss": 0.0,
+      "trades_per_market": 7.12
+    }
+  },
+  "detection": {
+    "QMDP": {
+      "markets_with_insider": 151,
+      "detected_share": 0.9470198675496688,
+      "median_delay_steps": 2.0,
+      "median_lead_steps": 43.0,
+      "false_positive_rate_markets": 0.11409395973154363,
+      "false_positive_rate_steps": 0.004316638100679236
+    },
+    "QMDP (particle filter)": {
+      "markets_with_insider": 151,
+      "detected_share": 0.9536423841059603,
+      "median_delay_steps": 2.0,
+      "median_lead_steps": 42.5,
+      "false_positive_rate_markets": 0.12080536912751678,
+      "false_positive_rate_steps": 0.0042531581286104235
+    }
+  }
+}
