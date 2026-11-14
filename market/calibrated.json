@@ -1,0 +1,332 @@
+{
+  "source": "SII-WANGZJ/Polymarket_data; see polymarket/calibrate.py",
+  "units": {
+    "step": "1 hour",
+    "contract_size": 1000,
+    "large_trade_contracts": 2000.0
+  },
+  "design_choices": {
+    "horizon_hours": 72,
+    "insider_share": 0.5,
+    "copy_share": 0.14285714285714285,
+    "wallet_features": "only trade size is calibrated; age, funding, category and longshot record keep their placeholder values until task 4"
+  },
+  "params": {
+    "horizon": 72,
+    "onset_rate": 0.009580852533173756,
+    "insider_drift": 0.02690245606457169,
+    "news_mean": 0.01031840380635256,
+    "news_sd": 1.0,
+    "news_weight": 0.02063680761270512,
+    "noise_sd": 0.05401245010740672,
+    "impact": 0.0006484085185137565,
+    "fee": 0.0,
+    "flow": {
+      "retail_rate": 2.8690476190476195,
+      "copy_base_rate": 0.47817460317460314,
+      "insider_rate": 0.7929292929292929,
+      "copy_follow_rate": 0.29090909090909123,
+      "profiles": {
+        "retail": {
+          "size_log_mean": 8.626066062789969,
+          "size_log_sd": 0.9534628091442021
+        },
+        "insider": {
+          "size_log_mean": 8.9580639324147,
+          "size_log_sd": 1.1790295059851337
+        },
+        "copybot": {
+          "size_log_mean": 8.622438107201095,
+          "size_log_sd": 0.8631776550390803
+        }
+      }
+    }
+  },
+  "estimates": {
+    "markets": [
+      {
+        "id": "538932",
+        "role": "calibration",
+        "quiet_hours": 4517
+      },
+      {
+        "id": "570361",
+        "role": "calibration",
+        "quiet_hours": 3127
+      },
+      {
+        "id": "1269423",
+        "role": "calibration",
+        "quiet_hours": 334
+      },
+      {
+        "id": "916440",
+        "role": "incident",
+        "quiet_hours": 454
+      },
+      {
+        "id": "560868",
+        "role": "incident",
+        "quiet_hours": 41
+      },
+      {
+        "id": "532742",
+        "role": "incident",
+        "quiet_hours": 1720
+      },
+      {
+        "id": "554010",
+        "role": "incident",
+        "quiet_hours": 30
+      },
+      {
+        "id": "635246",
+        "role": "incident",
+        "quiet_hours": 0
+      },
+      {
+        "id": "1198423",
+        "role": "incident",
+        "quiet_hours": 888
+      },
+      {
+        "id": "1419011",
+        "role": "incident",
+        "quiet_hours": 6
+      },
+      {
+        "id": "1706788",
+        "role": "incident",
+        "quiet_hours": 200
+      }
+    ],
+    "price": {
+      "quiet_hours": 11317,
+      "drift_toward_outcome": 0.00021293891422190196,
+      "drift_stderr": 0.0006668198578724618,
+      "news_mean_95_upper": 0.027567243565978148,
+      "total_var": 0.005031690290786467,
+      "lag1_autocov": -0.0008442338478687816,
+      "permanent_var": 0.003343222595048904,
+      "news_mean": 0.01031840380635256,
+      "news_weight": 0.02063680761270512,
+      "noise_sd": 0.05401245010740672
+    },
+    "impact": {
+      "per_contract_by_market": {
+        "538932": 3.2704553163856966e-07,
+        "570361": 6.02304969625933e-07,
+        "1269423": -7.1750826166630054e-09,
+        "916440": 4.982188709580022e-06,
+        "532742": 7.232509319523956e-06,
+        "1198423": 6.484085185137565e-07,
+        "1706788": 1.5905621630925143e-06
+      },
+      "per_contract": 6.484085185137565e-07
+    },
+    "uninformed_flow": {
+      "by_market": {
+        "538932": {
+          "quiet_hours": 72,
+          "per_hour": 31.583333333333332,
+          "yes_share": 0.4445910290237467
+        },
+        "570361": {
+          "quiet_hours": 72,
+          "per_hour": 3.3472222222222223,
+          "yes_share": 0.6016597510373444
+        },
+        "1269423": {
+          "quiet_hours": 72,
+          "per_hour": 17.59722222222222,
+          "yes_share": 0.26992896606156275
+        },
+        "916440": {
+          "quiet_hours": 72,
+          "per_hour": 0.5,
+          "yes_share": 0.5
+        },
+        "532742": {
+          "quiet_hours": 72,
+          "per_hour": 1.125,
+          "yes_share": 0.5185185185185185
+        },
+        "554010": {
+          "quiet_hours": 30,
+          "per_hour": 2.1666666666666665,
+          "yes_share": 0.5076923076923077
+        },
+        "1198423": {
+          "quiet_hours": 72,
+          "per_hour": 7.763888888888889,
+          "yes_share": 0.4561717352415027
+        }
+      },
+      "per_hour": 3.3472222222222223,
+      "size": {
+        "n": 4523,
+        "log_mean": 8.626066062789969,
+        "log_sd": 0.9534628091442021,
+        "median": 4406.000000000004
+      }
+    },
+    "insider": {
+      "incidents": [
+        {
+          "market_id": "916440",
+          "onset": "2025-12-31T00:00:00+00:00",
+          "reveal": "2026-01-03T06:00:00+00:00",
+          "reveal_from": "documented",
+          "window_hours": 78,
+          "price_at_onset": 0.09,
+          "price_before_reveal": 0.12,
+          "drift": 0.004171490447927598,
+          "flagged_orders": 8,
+          "flagged_per_hour": 0.10256410256410256,
+          "same_side_per_hour": 0.6410256410256411,
+          "opposite_side_per_hour": 0.6410256410256411,
+          "both_sides_per_hour_before_onset": 0.48717948717948717,
+          "excess_follow_per_hour": 0.0,
+          "activity_ratio": 2.6315789473684212
+        },
+        {
+          "market_id": "560868",
+          "onset": "2025-10-09T20:00:00+00:00",
+          "reveal": "2025-10-10T06:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 10,
+          "price_at_onset": 0.478,
+          "price_before_reveal": 0.683,
+          "drift": 0.09507221567607693,
+          "flagged_orders": 24,
+          "flagged_per_hour": 2.4,
+          "same_side_per_hour": 8.3,
+          "opposite_side_per_hour": 7.9,
+          "both_sides_per_hour_before_onset": 0.2,
+          "excess_follow_per_hour": 0.40000000000000036,
+          "activity_ratio": 81.00000000000001
+        },
+        {
+          "market_id": "532742",
+          "onset": "2025-06-11T11:00:00+00:00",
+          "reveal": "2025-06-12T20:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 33,
+          "price_at_onset": 0.29,
+          "price_before_reveal": 0.56,
+          "drift": 0.03551706574599156,
+          "flagged_orders": 23,
+          "flagged_per_hour": 0.696969696969697,
+          "same_side_per_hour": 2.757575757575758,
+          "opposite_side_per_hour": 2.5757575757575757,
+          "both_sides_per_hour_before_onset": 1.4848484848484849,
+          "excess_follow_per_hour": 0.1818181818181821,
+          "activity_ratio": 3.591836734693878
+        },
+        {
+          "market_id": "554010",
+          "onset": "2025-06-21T08:00:00+00:00",
+          "reveal": "2025-06-21T17:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 9,
+          "price_at_onset": 0.079,
+          "price_before_reveal": 0.072,
+          "drift": -0.012544178747732504,
+          "flagged_orders": 8,
+          "flagged_per_hour": 0.8888888888888888,
+          "same_side_per_hour": 11.0,
+          "opposite_side_per_hour": 9.444444444444445,
+          "both_sides_per_hour_before_onset": 5.333333333333333,
+          "excess_follow_per_hour": 1.5555555555555554,
+          "activity_ratio": 3.833333333333333
+        },
+        {
+          "market_id": "635246",
+          "onset": "2025-11-28T14:00:00+00:00",
+          "reveal": "2025-12-04T03:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 133,
+          "price_at_onset": 0.001,
+          "price_before_reveal": 0.10399999999999998,
+          "drift": 0.03600913079405299,
+          "flagged_orders": 15,
+          "flagged_per_hour": 0.11278195488721804,
+          "same_side_per_hour": 0.2857142857142857,
+          "opposite_side_per_hour": 0.15789473684210525,
+          "both_sides_per_hour_before_onset": 0.022556390977443608,
+          "excess_follow_per_hour": 0.12781954887218044,
+          "activity_ratio": 19.666666666666668
+        },
+        {
+          "market_id": "1198423",
+          "onset": "2026-02-25T21:00:00+00:00",
+          "reveal": "2026-02-28T06:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 57,
+          "price_at_onset": 0.09,
+          "price_before_reveal": 0.21999999999999997,
+          "drift": 0.018713724211595624,
+          "flagged_orders": 55,
+          "flagged_per_hour": 0.9649122807017544,
+          "same_side_per_hour": 14.228070175438596,
+          "opposite_side_per_hour": 13.263157894736842,
+          "both_sides_per_hour_before_onset": 8.982456140350877,
+          "excess_follow_per_hour": 0.9649122807017534,
+          "activity_ratio": 3.060546875
+        },
+        {
+          "market_id": "1419011",
+          "onset": "2026-02-24T02:00:00+00:00",
+          "reveal": "2026-02-26T13:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 59,
+          "price_at_onset": 0.135,
+          "price_before_reveal": 0.272,
+          "drift": 0.015050961148151056,
+          "flagged_orders": 31,
+          "flagged_per_hour": 0.5254237288135594,
+          "same_side_per_hour": 5.084745762711864,
+          "opposite_side_per_hour": 5.0508474576271185,
+          "both_sides_per_hour_before_onset": 0.1694915254237288,
+          "excess_follow_per_hour": 0.03389830508474567,
+          "activity_ratio": 59.8
+        },
+        {
+          "market_id": "1706788",
+          "onset": "2026-04-07T10:00:00+00:00",
+          "reveal": "2026-04-07T22:00:00+00:00",
+          "reveal_from": "price",
+          "window_hours": 12,
+          "price_at_onset": 0.02200000000000002,
+          "price_before_reveal": 0.35,
+          "drift": 0.2886752734791161,
+          "flagged_orders": 12,
+          "flagged_per_hour": 1.0,
+          "same_side_per_hour": 35.25,
+          "opposite_side_per_hour": 31.333333333333332,
+          "both_sides_per_hour_before_onset": 9.583333333333334,
+          "excess_follow_per_hour": 3.916666666666668,
+          "activity_ratio": 6.947826086956521
+        }
+      ],
+      "insider_drift": 0.02690245606457169,
+      "insider_drift_pooled": 0.031282113187585864,
+      "insider_rate": 0.7929292929292929,
+      "copy_follow_rate": 0.29090909090909123,
+      "insider_size": {
+        "n": 176,
+        "log_mean": 8.9580639324147,
+        "log_sd": 1.1790295059851337,
+        "median": 5460.203108584883
+      },
+      "follower_size": {
+        "n": 1895,
+        "log_mean": 8.622438107201095,
+        "log_sd": 0.8631776550390803,
+        "median": 4545.449999999999
+      },
+      "window_hours_median": 45.0,
+      "activity_ratio_median": 5.390579710144927
+    }
+  }
+}

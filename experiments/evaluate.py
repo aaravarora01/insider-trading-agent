@@ -1,6 +1,7 @@
 """Run every policy on the same simulated markets and report metrics.
 
     python -m experiments.evaluate --markets 1000
+    python -m experiments.evaluate --markets 300 --params calibrated
 
 The simulator draws the same random numbers whatever the policy does, so a
 given seed produces the same market for every policy apart from our own
@@ -19,6 +20,7 @@ from agent.policies import BuyAndHold, Oracle, QMDPPolicy
 from agent.qmdp import QMDPSolver
 from experiments import plots
 from market import sim
+from market.calibration import calibrated_params
 from market.sim import MarketParams, outcome_sign
 
 
@@ -138,9 +140,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--out", type=Path, default=Path("results"))
+    parser.add_argument("--params", choices=["toy", "calibrated"], default="toy",
+                        help="toy defaults, or the fit to Polymarket data in market/calibrated.json")
     args = parser.parse_args()
 
-    params = MarketParams()
+    params = MarketParams() if args.params == "toy" else calibrated_params()
     aware = QMDPSolver(params, model_insiders=True)
     blind = QMDPSolver(params, model_insiders=False)
     policies = [

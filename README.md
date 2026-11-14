@@ -15,11 +15,17 @@ large lot), hold, or exit.
 ```
 market/sim.py          shared interface (MarketParams, MarketState, Observation, Action,
                        reset, step) and the toy simulator
+market/calibration.py  MarketParams fitted to Polymarket data (from market/calibrated.json)
 market/flow.py         large trades from retail, insider, and copy-bot wallets; wallet
                        features; exact likelihood with trader type marginalized out
 agent/belief.py        exact Bayes filter over (outcome, insider active)
 agent/qmdp.py          QMDP solver: finite-horizon value iteration on the fully observed problem
 agent/policies.py      buy-and-hold, QMDP, insider-blind QMDP, oracle
+polymarket/data.py     pulls markets and trades from the SII-WANGZJ/Polymarket_data
+                       Hugging Face dataset, converted to the YES perspective
+polymarket/selection.py  the markets we pull (calibration and incident)
+polymarket/calibrate.py  estimates the simulator's parameters; writes market/calibrated.json
+polymarket/flagged_wallets.csv  publicly flagged wallets with sources (weak insider labels)
 experiments/evaluate.py  runs all policies on the same markets, prints metrics, writes plots
 tests/                 accounting, filter calibration, solver sanity checks
 ```
@@ -30,7 +36,45 @@ tests/                 accounting, filter calibration, solver sanity checks
 pip install numpy matplotlib pytest
 pytest
 python -m experiments.evaluate --markets 1000    # writes results/
+python -m experiments.evaluate --markets 300 --params calibrated
 ```
+
+## Polymarket data
+
+```
+pip install duckdb pandas pyarrow huggingface_hub
+python -m polymarket.download      # about 10 min the first time; writes data/ (gitignored)
+```
+
+The source is [SII-WANGZJ/Polymarket_data](https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data)
+(MIT licence): every Polymarket CLOB fill from 2022-11-21 to 2026-10-04. The download
+fetches `markets.parquet` (0.5 GB), indexes where each market's rows sit in the 46 GB
+`trades.parquet`, and reads only those row groups. Output:
+
+- `data/polymarket/markets.json`: the selected markets, with `outcome` = 1 if answer1 won.
+- `data/polymarket/trades/<id>.parquet`: one row per fill, with `time`, `maker`, `taker`,
+  `token`, `taker_side` (+1 if the taker bought YES or sold NO), `yes_price`, `contracts`,
+  and `taker_usd` / `maker_usd`, each party's stake on the side it took.
+- `data/polymarket/prices/<id>.parquet`: hourly last price, VWAP, contracts, USD volume,
+  fill count.
+
+Caveats:
+- Use `taker_usd` / `maker_usd` for trade sizes, not the raw `usd_amount`. When a YES
+  buyer is matched with a NO buyer, the raw row records the NO buyer's cash, so one
+  flagged wallet's $32.5k stake shows up as $329k.
+- `end_date` in `markets.parquet` is not always the resolution time ("US strikes Iran
+  by February 28, 2026?" says Jan 30). Use the last fill or the price path instead.
+- The dataset has wallet addresses but no funding source, wallet creation date, market
+  category, or insider labels.
+
+### Flagged wallets
+
+`polymarket/flagged_wallets.csv` lists 21 wallets that journalists or on-chain analysts
+named as suspected insiders, each with its sources, how the address was obtained, and
+a confidence label (`strong`, `multi_source`, `single_source`, `weak`). These are weak
+labels: only one is tied to filed charges. The ACDC report's 152 wallets are not public.
+`polymarket.flagged.flagged_activity()` summarizes each wallet's fills in the downloaded
+markets.
 
 ## Interface for the simulator
 
@@ -38,7 +82,7 @@ python -m experiments.evaluate --markets 1000    # writes results/
   `step(state, action, rng, params) -> (MarketState, Observation, reward)`.
 - `step` must be a pure function of its arguments; planners call it on sampled states.
 - Policies see only `Observation`. `Observation.trades` lists other participants'
-  large trades (side, USD size, wallet age, fresh funding, category share,
+  large trades (side, contracts, wallet age, fresh funding, category share,
   longshot record); the trader type stays hidden. `MarketState.flow_types` holds
   the true types for evaluation. `score` is the insider log-likelihood ratio of
   those trades, kept as a one-number summary.
@@ -69,3 +113,46 @@ These numbers come from a simulator whose dynamics and wallet profiles the
 agent knows exactly, with placeholder parameters that have not yet been fit to
 Polymarket data; they are an upper bound on what to expect from a calibrated
 one.
+
+## Calibration
+
+`python -m polymarket.calibrate` fits the simulator to the 11 downloaded markets and writes
+`market/calibrated.json` (committed; `market.calibration.calibrated_params()` loads it).
+One step is one hour, one simulator contract is 1,000 real contracts, and a large trade is
+a taker order of at least 2,000 contracts. The method is in the module docstring.
+
+| Parameter | Value | From |
+|---|---|---|
+| `noise_sd` | 0.054 / hour | quiet-hour log-odds variance, Roll-corrected, minus the news share |
+| `news_mean`, `news_weight` | 0.010, 0.021 | drift toward the outcome in quiet hours (0.0002 ± 0.0007 / hour: not significant; `news_mean` < 0.028 at 95%) |
+| `insider_drift` | 0.027 / hour | median over 8 incidents of drift from first flagged fill to reveal |
+| `impact` | 0.00065 / sim contract | median OLS slope of hourly log-odds on net taker flow |
+| uninformed large orders | 3.3 / hour | median over markets, last 72 h before the market's end |
+| `insider_rate` | 0.79 / hour | flagged-wallet large orders on the winning side in the window |
+| `copy_follow_rate` | 0.29 / hour | other wallets' winning-side minus losing-side large orders in the window |
+| trade sizes | median ~5.6k (uninformed), ~7.7k (insider) contracts | lognormal fits |
+
+Design choices, not estimates: a 72-hour horizon; `onset_rate` set so half of simulated
+markets have an insider by the end; copy-bots as 1/7 of uninformed flow; wallet age,
+funding, category share and longshot record keep placeholder values until the wallet
+model (task 4).
+
+Findings that shaped the method:
+- Use a contract threshold, not USD. $1k buys ten times more contracts on a longshot than
+  on a favourite, so USD-large orders lean 90/10 toward the favourite; contract-large
+  orders split about 50/50 at every price, as the simulator assumes.
+- Activity surges near resolution with or without insiders (Mamdani: 9 to 49 large orders
+  an hour; Super Bowl: 0.1 to 101). Inside insider windows both sides surge about 5x, so
+  the follower rate is measured as same-side minus opposite-side flow. The simulator's
+  uninformed rate is constant, so a filter replayed on real markets will need a
+  time-varying rate to avoid reading the surge as an insider.
+- In three incidents the price hit 0.95+ hours before the documented announcement, so the
+  reveal is the earlier of the two.
+- Many flagged wallets traded with limit orders (taker on 6-30% of fills for some), so
+  insider orders are counted in either role.
+
+Calibrated results (300 markets): buy-and-hold -0.05 ± 0.08, insider-blind QMDP
+-0.36 ± 0.15, QMDP +1.52 ± 0.14 (Sharpe 0.63), oracle +2.63 ± 0.07. The filter flags 96% of
+insiders with a median delay of 2 hours; 16% of insider-free markets are flagged at least
+once. With the placeholder wallet features made identical across types, QMDP still earns
++1.40, but the delay rises to 5 hours and false positives to 29%.

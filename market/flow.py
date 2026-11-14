@@ -49,7 +49,7 @@ class TraderType(IntEnum):
 class WalletProfile:
     """Distribution of trade size and wallet features for one trader type."""
 
-    size_log_mean: float        # log USD
+    size_log_mean: float        # log contracts (payout exposure, same on either side)
     size_log_sd: float
     age_log_mean: float         # log days since the wallet first traded
     age_log_sd: float
@@ -63,15 +63,15 @@ class WalletProfile:
 # Placeholder values until they are fit to Polymarket data. They are chosen so
 # that no single feature separates the types: a fresh wallet is more likely to
 # be an insider, but plenty of retail wallets are fresh too.
-RETAIL = WalletProfile(size_log_mean=math.log(400), size_log_sd=1.0,
+RETAIL = WalletProfile(size_log_mean=math.log(800), size_log_sd=1.0,
                        age_log_mean=math.log(120), age_log_sd=1.3,
                        new_funding_prob=0.15, category_a=2.0, category_b=4.0,
                        longshot_bets_mean=6.0, longshot_win_prob=0.10)
-INSIDER = WalletProfile(size_log_mean=math.log(1200), size_log_sd=1.0,
+INSIDER = WalletProfile(size_log_mean=math.log(2400), size_log_sd=1.0,
                         age_log_mean=math.log(30), age_log_sd=1.5,
                         new_funding_prob=0.45, category_a=3.0, category_b=2.5,
                         longshot_bets_mean=4.0, longshot_win_prob=0.30)
-COPYBOT = WalletProfile(size_log_mean=math.log(600), size_log_sd=0.8,
+COPYBOT = WalletProfile(size_log_mean=math.log(1200), size_log_sd=0.8,
                         age_log_mean=math.log(150), age_log_sd=1.0,
                         new_funding_prob=0.10, category_a=1.5, category_b=3.0,
                         longshot_bets_mean=12.0, longshot_win_prob=0.14)
@@ -92,7 +92,7 @@ class LargeTrade:
     """One observed trade. `side` is +1 for YES and -1 for NO."""
 
     side: int
-    usd_size: float
+    contracts: float
     wallet_age_days: float
     new_funding: bool
     category_share: float
@@ -125,7 +125,7 @@ def sample_wallet(profile: WalletProfile, side: int,
     bets = int(rng.poisson(profile.longshot_bets_mean))
     return LargeTrade(
         side=side,
-        usd_size=float(rng.lognormal(profile.size_log_mean, profile.size_log_sd)),
+        contracts=float(rng.lognormal(profile.size_log_mean, profile.size_log_sd)),
         wallet_age_days=float(rng.lognormal(profile.age_log_mean, profile.age_log_sd)),
         new_funding=bool(rng.random() < profile.new_funding_prob),
         category_share=float(rng.beta(profile.category_a, profile.category_b)),
@@ -154,7 +154,7 @@ _lgamma = np.vectorize(math.lgamma, otypes=[float])
 
 def _features(trades: tuple[LargeTrade, ...]) -> dict[str, np.ndarray]:
     return {
-        "size": np.array([t.usd_size for t in trades]),
+        "size": np.array([t.contracts for t in trades]),
         "age": np.array([t.wallet_age_days for t in trades]),
         "new_funding": np.array([t.new_funding for t in trades], dtype=bool),
         "category": np.clip([t.category_share for t in trades], 1e-9, 1 - 1e-9),
