@@ -1,0 +1,15 @@
+[project]
+name = "insider-trading-agent"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["numpy", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["market", "agent", "experiments"]
