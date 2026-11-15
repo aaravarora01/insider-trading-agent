@@ -94,7 +94,8 @@ def test_flow_does_not_depend_on_actions():
         out = []
         while not obs.done:
             state, obs, _ = sim.step(state, action, rng, PARAMS)
-            out.append((obs.trades, state.flow_types, obs.score))
+            # NaN != NaN, so compare reprs; dataclass == fails on NaN fields in 3.13+
+            out.append((repr(obs.trades), state.flow_types, obs.score))
         return out
 
     assert trades(Action.HOLD) == trades(Action.BUY_NO_LARGE)
